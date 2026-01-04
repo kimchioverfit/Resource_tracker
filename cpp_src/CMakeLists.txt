@@ -1,53 +1,134 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.25)
 
-# 프로젝트 이름과 언어
-project(PC365Logger
-    VERSION 1.0
-    LANGUAGES CXX)
-
-# C++ 표준 설정 (17 이상이면 충분)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-# 소스 파일들 목록
-# main.cpp 이름이 다르면 여기만 바꿔줘 (예: SystemMonitorConsole.cpp)
-set(SOURCES
-    main.cpp
-    util_format.cpp
-    csv_writer.cpp
-    wmi_helper.cpp
-    disk_helper.cpp
-    net_helper.cpp
-    nvml_helper.cpp
-    pdh_helper.cpp
+project(
+    PcCare365_
+    LANGUAGES CXX
 )
 
-# 실행 파일 생성
-add_executable(${PROJECT_NAME} ${SOURCES})
-
-# Windows 전용 설정
 if (MSVC)
-    # 경고 레벨 & 멀티바이트/유니코드 관련은 필요시 추가
-    target_compile_options(${PROJECT_NAME} PRIVATE /W4)
+    add_compile_options(
+        /utf-8
+        /permissive-
+        /W4
+        /EHsc
+    )
 endif()
 
-# Windows 헤더에서 min/max 매크로 안 쓰게 (std::max/std::min 깨지는 것 방지)
-target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX)
-
-# 필요 라이브러리 링크
-# - wbemuuid : WMI
-# - iphlpapi : 네트워크 어댑터 정보
-# - pdh      : Performance Data Helper
-target_link_libraries(${PROJECT_NAME}
-    PRIVATE
-        wbemuuid
-        iphlpapi
-        pdh
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_COMMIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE GIT_CMD_RESULT
 )
 
-# 인클루드 디렉토리 (현재 폴더)
-target_include_directories(${PROJECT_NAME}
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
+if (NOT GIT_CMD_RESULT EQUAL 0 OR GIT_COMMIT_HASH STREQUAL "")
+    set(GIT_COMMIT_HASH nogit)
+endif()
+
+set(EXE_NAME "PcCare365_${GIT_COMMIT_HASH}")
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+include(FetchContent)
+
+set(
+    Torch_bin_archive_url_release
+    "https://download.pytorch.org/libtorch/cpu/libtorch-win-shared-with-deps-2.3.1%2Bcpu.zip"
 )
+
+set(
+    Torch_bin_archive_url_debug
+    "https://download.pytorch.org/libtorch/cpu/libtorch-win-shared-with-deps-debug-2.3.1%2Bcpu.zip"
+)
+
+option(
+    TORCH_USE_DEBUG_BIN
+    "Download debug libtorch archive (otherwise release)"
+    OFF
+)
+
+set(_torch_use_debug "${TORCH_USE_DEBUG_BIN}")
+
+if (NOT _torch_use_debug AND CMAKE_BUILD_TYPE)
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(_torch_use_debug ON)
+    endif()
+endif()
+
+if (_torch_use_debug)
+    set(Torch_bin_archive_url "${Torch_bin_archive_url_debug}")
+else()
+    set(Torch_bin_archive_url "${Torch_bin_archive_url_release}")
+endif()
+
+FetchContent_Declare(
+    Torch
+    URL ${Torch_bin_archive_url}
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+
+FetchContent_MakeAvailable(Torch)
+
+set(Torch_DIR "${torch_SOURCE_DIR}/share/cmake/Torch/")
+
+find_package(Torch REQUIRED)
+
+set(TORCH_LIB_DIR "${torch_SOURCE_DIR}/lib")
+
+set(EMBED_RC "${CMAKE_BINARY_DIR}/embedded_dlls.rc")
+
+file(
+    WRITE "${EMBED_RC}"
+    "#include \"${CMAKE_SOURCE_DIR}/src/resources.h\"\n"
+)
+
+list(LENGTH EMBED_DLLS EMBED_DLLS_LEN)
+math(EXPR EMBED_DLLS_LAST "${EMBED_DLLS_LEN}-1")
+
+file(
+    GLOB_RECURSE SRC_FILES
+    CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/src/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/*.h"
+    "${CMAKE_SOURCE_DIR}/src/*.hpp"
+)
+
+add_executable(${EXE_NAME} ${SRC_FILES})
+
+target_sources(${EXE_NAME} PRIVATE "${EMBED_RC}")
+
+target_link_libraries(
+    ${EXE_NAME}
+    PRIVATE
+    ${TORCH_LIBRARIES}
+)
+
+target_include_directories(
+    ${EXE_NAME}
+    PRIVATE
+    src
+)
+
+if (WIN32)
+    target_compile_definitions(
+        ${EXE_NAME}
+        PRIVATE
+        UNICODE
+        _UNICODE
+        WIN32_LEAN_AND_MEAN
+        _WIN32_WINNT=0x0A00
+    )
+
+    target_link_libraries(
+        ${EXE_NAME}
+        PRIVATE
+        Pdh
+        Iphlpapi
+        Ws2_32
+        Wbemuuid
+        Ole32
+        OleAut32
+    )
+endif()
