@@ -79,10 +79,10 @@ set(TORCH_LIB_DIR "${torch_SOURCE_DIR}/lib")
 
 set(EMBED_RC "${CMAKE_BINARY_DIR}/embedded_dlls.rc")
 
-file(
-    WRITE "${EMBED_RC}"
-    "#include \"${CMAKE_SOURCE_DIR}/src/resources.h\"\n"
-)
+# file(
+#     WRITE "${EMBED_RC}"
+#     "#include \"${CMAKE_SOURCE_DIR}/src/resources.h\"\n"
+# )
 
 list(LENGTH EMBED_DLLS EMBED_DLLS_LEN)
 math(EXPR EMBED_DLLS_LAST "${EMBED_DLLS_LEN}-1")
@@ -97,7 +97,7 @@ file(
 
 add_executable(${EXE_NAME} ${SRC_FILES})
 
-target_sources(${EXE_NAME} PRIVATE "${EMBED_RC}")
+# target_sources(${EXE_NAME} PRIVATE "${EMBED_RC}")
 
 target_link_libraries(
     ${EXE_NAME}
